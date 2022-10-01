@@ -78,7 +78,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 			} else {
 				requestBodyStruct := GetInternalKeyRequest{inputKeyHashed, OriginalKey}
 				requestBodyJson, _ := json.Marshal(requestBodyStruct)
-				resp, error := http.Post("https://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
+				resp, error := http.Post("http://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
 				if error != nil {
 					http.Error(w, "Key not found", http.StatusNotFound)
 				} else {
@@ -115,7 +115,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 			} else {
 				requestBodyStruct := PutInternalKeyRequest{inputKeyHashed, OriginalKey, string(body)}
 				requestBodyJson, _ := json.Marshal(requestBodyStruct)
-				resp, error := http.Post("https://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
+				resp, error := http.Post("http://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
 				if error != nil {
 					http.Error(w, "Key was not put", http.StatusNotFound)
 				} else {
@@ -157,7 +157,7 @@ func findKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 		} else {
 			requestBodyStruct := GetInternalKeyRequest{responseBodyStruct.HashedKey, responseBodyStruct.OriginalKey}
 			requestBodyJson, _ := json.Marshal(requestBodyStruct)
-			resp, error := http.Post("https://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
+			resp, error := http.Post("http://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
 			if error != nil {
 				http.Error(w, "Key not found", http.StatusNotFound)
 			} else {
@@ -196,7 +196,7 @@ func putKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 		} else {
 			requestBodyStruct := PutInternalKeyRequest{responseBodyStruct.HashedKey, responseBodyStruct.OriginalKey, responseBodyStruct.Value}
 			requestBodyJson, _ := json.Marshal(requestBodyStruct)
-			resp, error := http.Post("https://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
+			resp, error := http.Post("http://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
 			if error != nil {
 				http.Error(w, "Key was not put", http.StatusNotFound)
 			} else {
