@@ -3,12 +3,14 @@ package main
 import (
 	"os"
 	"strconv"
-
+	"time"
+	
 	"example.com/DHTServer/dht"
 	"github.com/spf13/viper"
 )
 
 func main() {
+	time.AfterFunc(20*time.Minute, func() { os.Exit(0) })
 	viper.SetConfigFile("config.env")
 	viper.ReadInConfig()
 

@@ -71,7 +71,11 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
 				} else if len(n.Records[inputKeyHashed-n.NodeId]) == 1 {
-					fmt.Fprintf(w, n.Records[inputKeyHashed-n.NodeId][0].Value)
+					if n.Records[inputKeyHashed-n.NodeId][0].OrigKey == OriginalKey {
+						fmt.Fprintf(w, n.Records[inputKeyHashed-n.NodeId][0].Value)
+					} else {
+						http.Error(w, "No such key", http.StatusNotFound)
+					}
 				} else {
 					http.Error(w, "No such key", http.StatusNotFound)
 				}
@@ -150,7 +154,11 @@ func findKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 					http.Error(w, "No such key", http.StatusNotFound)
 				}
 			} else if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 1 {
-				fmt.Fprintf(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][0].Value)
+				if n.Records[responseBodyStruct.HashedKey-n.NodeId][0].OrigKey == responseBodyStruct.OriginalKey {
+					fmt.Fprintf(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][0].Value)
+				} else {
+					http.Error(w, "No such key", http.StatusNotFound)
+				}
 			} else {
 				http.Error(w, "No such key", http.StatusNotFound)
 			}
