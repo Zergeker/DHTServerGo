@@ -26,16 +26,16 @@ type PutInternalKeyRequest struct {
 	Value       string
 }
 
-func StartController(node *Node) {
+func StartController(node *Node, port int, nodesCount int) {
 	viper.SetConfigFile("config.env")
 	viper.ReadInConfig()
 
-	http.HandleFunc("/", storageKeyHandler(node, viper.GetInt("NODES_COUNT")))
+	http.HandleFunc("/", storageKeyHandler(node, nodesCount))
 	http.HandleFunc("/neighbors", getNeighborsHandler(node))
 	http.HandleFunc("/findKeyInOtherNode", findKeyInOtherNodeHandler(node))
 	http.HandleFunc("/putKeyInOtherNode", putKeyInOtherNodeHandler(node))
 
-	err := http.ListenAndServe(":"+strconv.Itoa(viper.GetInt("PORT")), nil)
+	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 
 	if errors.Is(err, http.ErrServerClosed) {
 		fmt.Println("server closed")

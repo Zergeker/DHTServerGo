@@ -4,7 +4,7 @@ import (
 	"os"
 	"strconv"
 	"time"
-	
+
 	"example.com/DHTServer/dht"
 	"github.com/spf13/viper"
 )
@@ -22,5 +22,5 @@ func main() {
 
 	n := dht.NewNode(nodeId, keySpaceCellSize, successorHost, predecessorHost, viper.GetInt("NODES_COUNT"))
 
-	dht.StartController(n)
+	dht.StartController(n, viper.GetInt("PORT"), viper.GetInt("NODES_COUNT"))
 }
