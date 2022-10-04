@@ -30,7 +30,7 @@ func StartController(node *Node) {
 	viper.SetConfigFile("config.env")
 	viper.ReadInConfig()
 
-	http.HandleFunc("/", storageKeyHandler(node))
+	http.HandleFunc("/", storageKeyHandler(node, viper.GetInt("NODES_COUNT")))
 	http.HandleFunc("/neighbors", getNeighborsHandler(node))
 	http.HandleFunc("/findKeyInOtherNode", findKeyInOtherNodeHandler(node))
 	http.HandleFunc("/putKeyInOtherNode", putKeyInOtherNodeHandler(node))
@@ -52,13 +52,14 @@ func getRootHandler(n *Node) http.HandlerFunc {
 	}
 }
 
-func storageKeyHandler(n *Node) http.HandlerFunc {
+func storageKeyHandler(n *Node, nodesCount int) http.HandlerFunc {
+
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case "GET":
 			OriginalKey := path.Base(r.URL.Path)
 			inputKeyHashed := HashString(OriginalKey, n.KeySpaceSize)
-			if inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId {
+			if (inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || nodesCount == 1 {
 				foundFlag := false
 				if len(n.Records[inputKeyHashed-n.NodeId]) > 1 {
 					for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
@@ -97,7 +98,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 			if err != nil {
 				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 			}
-			if inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId {
+			if (inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || nodesCount == 1 {
 				if len(n.Records[inputKeyHashed-n.NodeId]) == 0 {
 					n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
 					fmt.Fprint(w, "Success!\n")
