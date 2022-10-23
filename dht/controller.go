@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
 	"strconv"
-
-	"github.com/spf13/viper"
 )
+
+var state = 1 //0 = crashed, 1 = active
+var nodesCount = 1
 
 type GetInternalKeyRequest struct {
 	HashedKey   int
@@ -26,14 +26,30 @@ type PutInternalKeyRequest struct {
 	Value       string
 }
 
-func StartController(node *Node, port int, nodesCount int) {
-	viper.SetConfigFile("config.env")
-	viper.ReadInConfig()
+type NodePlaceSearchResponse struct {
+	SuccessorIp   string
+	PredecessorIp string
+}
 
-	http.HandleFunc("/", storageKeyHandler(node, nodesCount))
+type NodeInfoResponse struct {
+	Node_hash string   `json:"node_hash"`
+	Successor string   `json:"successor"`
+	Others    []string `json:"others"`
+}
+
+func StartController(node *Node, port int) {
+
+	http.HandleFunc("/", storageKeyHandler(node))
 	http.HandleFunc("/neighbors", getNeighborsHandler(node))
 	http.HandleFunc("/findKeyInOtherNode", findKeyInOtherNodeHandler(node))
 	http.HandleFunc("/putKeyInOtherNode", putKeyInOtherNodeHandler(node))
+	http.HandleFunc("/sim-crash", crashSimHandler(node))
+	http.HandleFunc("/sim-recover", crashSimRecoveryHandler(node))
+	http.HandleFunc("/nodePlaceSearch", nodePlaceSearchHandler(node))
+	http.HandleFunc("/join", nodeJoinHandler(node))
+	http.HandleFunc("/node-info", nodeInfoHandler(node))
+	http.HandleFunc("/changeSuccessor", nodeChangeSuccessorHandler(node))
+	http.HandleFunc("/changePredecessor", nodeChangePredecessorHandler(node))
 
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 
@@ -45,35 +61,157 @@ func StartController(node *Node, port int, nodesCount int) {
 	}
 }
 
-func getRootHandler(n *Node) http.HandlerFunc {
+func storageKeyHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Printf("got / request\n")
-		io.WriteString(w, path.Base(r.URL.Path))
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			switch r.Method {
+			case "GET":
+				OriginalKey := path.Base(r.URL.Path)
+				inputKeyHashed := HashString(OriginalKey, n.KeySpaceSize)
+				if nodesCount == 1 {
+					foundFlag := false
+					if len(n.Records[inputKeyHashed]) > 1 {
+						for i := 0; i < len(n.Records[inputKeyHashed]); i++ {
+							if n.Records[inputKeyHashed][i].OrigKey == OriginalKey {
+								fmt.Fprint(w, n.Records[inputKeyHashed][i].Value)
+								foundFlag = true
+							}
+						}
+						if foundFlag == false {
+							http.Error(w, "No such key", http.StatusNotFound)
+						}
+					} else if len(n.Records[inputKeyHashed]) == 1 {
+						if n.Records[inputKeyHashed][0].OrigKey == OriginalKey {
+							fmt.Fprintf(w, n.Records[inputKeyHashed][0].Value)
+						} else {
+							http.Error(w, "No such key", http.StatusNotFound)
+						}
+					} else {
+						http.Error(w, "No such key", http.StatusNotFound)
+					}
+				} else if inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId {
+					foundFlag := false
+					if len(n.Records[inputKeyHashed-n.NodeId]) > 1 {
+						for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
+							if n.Records[inputKeyHashed-n.NodeId][i].OrigKey == OriginalKey {
+								fmt.Fprint(w, n.Records[inputKeyHashed-n.NodeId][i].Value)
+								foundFlag = true
+							}
+						}
+						if foundFlag == false {
+							http.Error(w, "No such key", http.StatusNotFound)
+						}
+					} else if len(n.Records[inputKeyHashed-n.NodeId]) == 1 {
+						if n.Records[inputKeyHashed-n.NodeId][0].OrigKey == OriginalKey {
+							fmt.Fprintf(w, n.Records[inputKeyHashed-n.NodeId][0].Value)
+						} else {
+							http.Error(w, "No such key", http.StatusNotFound)
+						}
+					} else {
+						http.Error(w, "No such key", http.StatusNotFound)
+					}
+				} else {
+					requestBodyStruct := GetInternalKeyRequest{inputKeyHashed, OriginalKey}
+					requestBodyJson, _ := json.Marshal(requestBodyStruct)
+					resp, error := http.Post("http://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
+					if error != nil {
+						http.Error(w, "Key not found", http.StatusNotFound)
+					} else {
+						rBody, _ := ioutil.ReadAll(resp.Body)
+						fmt.Fprintf(w, string(rBody))
+					}
+				}
+			case "PUT":
+				OriginalKey := path.Base(r.URL.Path)
+				inputKeyHashed := HashString(OriginalKey, n.KeySpaceSize)
+				body, err := ioutil.ReadAll(r.Body)
+				if err != nil {
+					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				}
+
+				if nodesCount == 1 {
+					if len(n.Records[inputKeyHashed]) == 0 {
+						n.Records[inputKeyHashed] = append(n.Records[inputKeyHashed], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+						fmt.Fprint(w, "Success!\n")
+					} else {
+						foundFlag := false
+						for i := 0; i < len(n.Records[inputKeyHashed]); i++ {
+							if n.Records[inputKeyHashed][i].OrigKey == OriginalKey {
+								foundFlag = true
+							}
+						}
+
+						if foundFlag {
+							fmt.Fprint(w, "Key is already put\n")
+						} else {
+							n.Records[inputKeyHashed] = append(n.Records[inputKeyHashed], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+							fmt.Fprint(w, "Success!\n")
+						}
+					}
+				} else if inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId {
+					if len(n.Records[inputKeyHashed-n.NodeId]) == 0 {
+						n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+						fmt.Fprint(w, "Success!\n")
+					} else {
+						foundFlag := false
+						for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
+							if n.Records[inputKeyHashed-n.NodeId][i].OrigKey == OriginalKey {
+								foundFlag = true
+							}
+						}
+
+						if foundFlag {
+							fmt.Fprint(w, "Key is already put\n")
+						} else {
+							n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+							fmt.Fprint(w, "Success!\n")
+						}
+					}
+				} else {
+					requestBodyStruct := PutInternalKeyRequest{inputKeyHashed, OriginalKey, string(body)}
+					requestBodyJson, _ := json.Marshal(requestBodyStruct)
+					resp, error := http.Post("http://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
+					if error != nil {
+						http.Error(w, "Key was not put", http.StatusNotFound)
+					} else {
+						rBody, _ := ioutil.ReadAll(resp.Body)
+						fmt.Fprintf(w, string(rBody))
+					}
+				}
+				r.Body.Close()
+			default:
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			}
+		}
 	}
 }
 
-func storageKeyHandler(n *Node, nodesCount int) http.HandlerFunc {
-
+func findKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case "GET":
-			OriginalKey := path.Base(r.URL.Path)
-			inputKeyHashed := HashString(OriginalKey, n.KeySpaceSize)
-			if (inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || nodesCount == 1 {
-				foundFlag := false
-				if len(n.Records[inputKeyHashed-n.NodeId]) > 1 {
-					for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
-						if n.Records[inputKeyHashed-n.NodeId][i].OrigKey == OriginalKey {
-							fmt.Fprint(w, n.Records[inputKeyHashed-n.NodeId][i].Value)
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			respBody, _ := ioutil.ReadAll(r.Body)
+			var responseBodyStruct GetInternalKeyRequest
+			json.Unmarshal(respBody, &responseBodyStruct)
+
+			if responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId {
+				if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) > 1 {
+					foundFlag := false
+					for i := 0; i < len(n.Records[responseBodyStruct.HashedKey-n.NodeId]); i++ {
+						if n.Records[responseBodyStruct.HashedKey-n.NodeId][i].OrigKey == responseBodyStruct.OriginalKey {
+							fmt.Fprint(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][i].Value)
 							foundFlag = true
 						}
 					}
 					if foundFlag == false {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
-				} else if len(n.Records[inputKeyHashed-n.NodeId]) == 1 {
-					if n.Records[inputKeyHashed-n.NodeId][0].OrigKey == OriginalKey {
-						fmt.Fprintf(w, n.Records[inputKeyHashed-n.NodeId][0].Value)
+				} else if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 1 {
+					if n.Records[responseBodyStruct.HashedKey-n.NodeId][0].OrigKey == responseBodyStruct.OriginalKey {
+						fmt.Fprintf(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][0].Value)
 					} else {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
@@ -81,7 +219,7 @@ func storageKeyHandler(n *Node, nodesCount int) http.HandlerFunc {
 					http.Error(w, "No such key", http.StatusNotFound)
 				}
 			} else {
-				requestBodyStruct := GetInternalKeyRequest{inputKeyHashed, OriginalKey}
+				requestBodyStruct := GetInternalKeyRequest{responseBodyStruct.HashedKey, responseBodyStruct.OriginalKey}
 				requestBodyJson, _ := json.Marshal(requestBodyStruct)
 				resp, error := http.Post("http://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
 				if error != nil {
@@ -91,21 +229,27 @@ func storageKeyHandler(n *Node, nodesCount int) http.HandlerFunc {
 					fmt.Fprintf(w, string(rBody))
 				}
 			}
-		case "PUT":
-			OriginalKey := path.Base(r.URL.Path)
-			inputKeyHashed := HashString(OriginalKey, n.KeySpaceSize)
-			body, err := ioutil.ReadAll(r.Body)
-			if err != nil {
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-			}
-			if (inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || nodesCount == 1 {
-				if len(n.Records[inputKeyHashed-n.NodeId]) == 0 {
-					n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+		}
+	}
+}
+
+func putKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			respBody, _ := ioutil.ReadAll(r.Body)
+			var responseBodyStruct PutInternalKeyRequest
+			json.Unmarshal(respBody, &responseBodyStruct)
+
+			if responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId {
+				if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 0 {
+					n.Records[responseBodyStruct.HashedKey-n.NodeId] = append(n.Records[responseBodyStruct.HashedKey-n.NodeId], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
 					fmt.Fprint(w, "Success!\n")
 				} else {
 					foundFlag := false
-					for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
-						if n.Records[inputKeyHashed-n.NodeId][i].OrigKey == OriginalKey {
+					for i := 0; i < len(n.Records[responseBodyStruct.HashedKey-n.NodeId]); i++ {
+						if n.Records[responseBodyStruct.HashedKey-n.NodeId][i].OrigKey == responseBodyStruct.OriginalKey {
 							foundFlag = true
 						}
 					}
@@ -113,12 +257,12 @@ func storageKeyHandler(n *Node, nodesCount int) http.HandlerFunc {
 					if foundFlag {
 						fmt.Fprint(w, "Key is already put\n")
 					} else {
-						n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+						n.Records[responseBodyStruct.HashedKey-n.NodeId] = append(n.Records[responseBodyStruct.HashedKey-n.NodeId], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
 						fmt.Fprint(w, "Success!\n")
 					}
 				}
 			} else {
-				requestBodyStruct := PutInternalKeyRequest{inputKeyHashed, OriginalKey, string(body)}
+				requestBodyStruct := PutInternalKeyRequest{responseBodyStruct.HashedKey, responseBodyStruct.OriginalKey, responseBodyStruct.Value}
 				requestBodyJson, _ := json.Marshal(requestBodyStruct)
 				resp, error := http.Post("http://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
 				if error != nil {
@@ -128,97 +272,153 @@ func storageKeyHandler(n *Node, nodesCount int) http.HandlerFunc {
 					fmt.Fprintf(w, string(rBody))
 				}
 			}
-			r.Body.Close()
-		default:
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		}
-
-	}
-}
-
-func findKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		respBody, _ := ioutil.ReadAll(r.Body)
-		var responseBodyStruct GetInternalKeyRequest
-		json.Unmarshal(respBody, &responseBodyStruct)
-
-		if responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId {
-			if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) > 1 {
-				foundFlag := false
-				for i := 0; i < len(n.Records[responseBodyStruct.HashedKey-n.NodeId]); i++ {
-					if n.Records[responseBodyStruct.HashedKey-n.NodeId][i].OrigKey == responseBodyStruct.OriginalKey {
-						fmt.Fprint(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][i].Value)
-						foundFlag = true
-					}
-				}
-				if foundFlag == false {
-					http.Error(w, "No such key", http.StatusNotFound)
-				}
-			} else if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 1 {
-				if n.Records[responseBodyStruct.HashedKey-n.NodeId][0].OrigKey == responseBodyStruct.OriginalKey {
-					fmt.Fprintf(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][0].Value)
-				} else {
-					http.Error(w, "No such key", http.StatusNotFound)
-				}
-			} else {
-				http.Error(w, "No such key", http.StatusNotFound)
-			}
-		} else {
-			requestBodyStruct := GetInternalKeyRequest{responseBodyStruct.HashedKey, responseBodyStruct.OriginalKey}
-			requestBodyJson, _ := json.Marshal(requestBodyStruct)
-			resp, error := http.Post("http://"+n.SuccessorIp+"/findKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
-			if error != nil {
-				http.Error(w, "Key not found", http.StatusNotFound)
-			} else {
-				rBody, _ := ioutil.ReadAll(resp.Body)
-				fmt.Fprintf(w, string(rBody))
-			}
-		}
-	}
-}
-
-func putKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		respBody, _ := ioutil.ReadAll(r.Body)
-		var responseBodyStruct PutInternalKeyRequest
-		json.Unmarshal(respBody, &responseBodyStruct)
-
-		if responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId {
-			if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 0 {
-				n.Records[responseBodyStruct.HashedKey-n.NodeId] = append(n.Records[responseBodyStruct.HashedKey-n.NodeId], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
-				fmt.Fprint(w, "Success!\n")
-			} else {
-				foundFlag := false
-				for i := 0; i < len(n.Records[responseBodyStruct.HashedKey-n.NodeId]); i++ {
-					if n.Records[responseBodyStruct.HashedKey-n.NodeId][i].OrigKey == responseBodyStruct.OriginalKey {
-						foundFlag = true
-					}
-				}
-
-				if foundFlag {
-					fmt.Fprint(w, "Key is already put\n")
-				} else {
-					n.Records[responseBodyStruct.HashedKey-n.NodeId] = append(n.Records[responseBodyStruct.HashedKey-n.NodeId], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
-					fmt.Fprint(w, "Success!\n")
-				}
-			}
-		} else {
-			requestBodyStruct := PutInternalKeyRequest{responseBodyStruct.HashedKey, responseBodyStruct.OriginalKey, responseBodyStruct.Value}
-			requestBodyJson, _ := json.Marshal(requestBodyStruct)
-			resp, error := http.Post("http://"+n.SuccessorIp+"/putKeyInOtherNode", "application/json", bytes.NewBuffer(requestBodyJson))
-			if error != nil {
-				http.Error(w, "Key was not put", http.StatusNotFound)
-			} else {
-				rBody, _ := ioutil.ReadAll(resp.Body)
-				fmt.Fprintf(w, string(rBody))
-			}
 		}
 	}
 }
 
 func getNeighborsHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		responseBody, _ := json.Marshal([]string{n.PredecessorIp, n.SuccessorIp})
-		fmt.Fprintf(w, string(responseBody))
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			responseBody, _ := json.Marshal([]string{n.PredecessorIp, n.SuccessorIp})
+			fmt.Fprintf(w, string(responseBody))
+		}
+	}
+}
+
+func crashSimHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			state = 0
+			w.Write([]byte("Node crash simulated"))
+		}
+	}
+}
+
+func crashSimRecoveryHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if state == 1 {
+			w.Write([]byte("Node is not crashed"))
+		} else {
+			state = 1
+			w.Write([]byte("Node recovered"))
+		}
+	}
+}
+
+func nodePlaceSearchHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		reqBody, _ := ioutil.ReadAll(r.Body)
+		searcherId, _ := strconv.Atoi(string(reqBody))
+		if nodesCount <= 1 {
+			if searcherId != n.NodeId {
+				respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.PredecessorIp}
+				respBodyJson, _ := json.Marshal(respBodyStruct)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respBodyJson)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("NodeId duplicates"))
+			}
+		} else if searcherId > n.NodeId && searcherId < n.SuccessorNodeId {
+			respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.PredecessorIp}
+			respBodyJson, _ := json.Marshal(respBodyStruct)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write(respBodyJson)
+		} else if searcherId == n.NodeId || searcherId == n.SuccessorNodeId {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("NodeId duplicates"))
+		} else {
+			resp, error := http.Post("http://"+n.SuccessorIp+"/nodePlaceSearch", "application/json", bytes.NewBuffer(reqBody))
+			if error != nil {
+				http.Error(w, "Node was not inserted", http.StatusInternalServerError)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			rBody, _ := ioutil.ReadAll(resp.Body)
+			w.Write(rBody)
+		}
+	}
+}
+
+func nodeJoinHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		nprime := r.URL.Query().Get("nprime")
+		nodeIdRawBytes := []byte(strconv.Itoa(n.NodeId))
+
+		resp, error := http.Post("http://"+nprime+"/nodePlaceSearch", "application/json", bytes.NewBuffer(nodeIdRawBytes))
+		if error != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("Error occured"))
+		}
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		var respBodyStruct NodePlaceSearchResponse
+		json.Unmarshal(respBody, &respBodyStruct)
+
+		respPredecessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
+		respPredecessorBody, _ := ioutil.ReadAll(respPredecessor.Body)
+		var respPredecessorStruct NodeInfoResponse
+		json.Unmarshal(respPredecessorBody, &respPredecessorStruct)
+		preId, _ := strconv.Atoi(respPredecessorStruct.Node_hash)
+		changeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
+
+		respSuccessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
+		respSuccessorBody, _ := ioutil.ReadAll(respSuccessor.Body)
+		var respSuccessorStruct NodeInfoResponse
+		json.Unmarshal(respSuccessorBody, &respSuccessorStruct)
+		sucId, _ := strconv.Atoi(respSuccessorStruct.Node_hash)
+		changeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
+
+		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "text/plain", bytes.NewBuffer(nodeIdRawBytes))
+		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "text/plain", bytes.NewBuffer(nodeIdRawBytes))
+
+		balanceNodeRecsSize(n)
+	}
+}
+
+func nodeInfoHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		respBodyStruct := NodeInfoResponse{strconv.Itoa(n.NodeId), n.SuccessorIp, []string{n.PredecessorIp}}
+		respBodyJson, _ := json.Marshal(respBodyStruct)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(respBodyJson)
+	}
+}
+
+func nodeChangeSuccessorHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
+		sucId, err := strconv.Atoi(string(body))
+		if err != nil {
+			http.Error(w, "Bad request body", http.StatusBadRequest)
+		}
+		changeNodeSuccessor(n, r.RemoteAddr, sucId)
+
+		balanceNodeRecsSize(n)
+		w.Write([]byte("Success"))
+	}
+}
+
+func nodeChangePredecessorHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
+		preId, err := strconv.Atoi(string(body))
+		if err != nil {
+			http.Error(w, "Bad request body", http.StatusBadRequest)
+		}
+		changeNodePredecessor(n, r.RemoteAddr, preId)
+		w.Write([]byte("Success"))
 	}
 }

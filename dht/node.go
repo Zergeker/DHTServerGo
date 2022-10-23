@@ -23,21 +23,30 @@ func NewNode(id int, keySpaceCellSize int, sucIp string, preIp string, nodesCoun
 
 	recs := make([][]*Record, keySpaceCellSize)
 
-	sucFullIp := sucIp + ":" + strconv.Itoa(viper.GetInt("PORT"))
-	preFullIp := preIp + ":" + strconv.Itoa(viper.GetInt("PORT"))
-	sucId := 0
-	preId := id * keySpaceCellSize
+	port := viper.GetInt("PORT")
 
-	if id+keySpaceCellSize < nodesCount*keySpaceCellSize {
-		sucId = id*keySpaceCellSize + keySpaceCellSize
-	}
+	sucFullIp := sucIp + ":" + strconv.Itoa(port)
+	preFullIp := preIp + ":" + strconv.Itoa(port)
 
-	if preId-keySpaceCellSize >= 0 {
-		preId = preId - keySpaceCellSize
-	} else {
-		preId = (nodesCount - 1) * keySpaceCellSize
-	}
-
-	n := Node{id * keySpaceCellSize, recs, sucId, preId, sucFullIp, preFullIp, viper.GetInt("PORT"), viper.GetInt("KEYSPACE_SIZE")}
+	n := Node{id, recs, 0, 0, sucFullIp, preFullIp, port, viper.GetInt("KEYSPACE_SIZE")}
 	return &n
+}
+
+func changeNodeSuccessor(n *Node, sucIp string, sucId int) {
+	n.SuccessorIp = sucIp
+	n.SuccessorNodeId = sucId
+}
+
+func changeNodePredecessor(n *Node, preIp string, preId int) {
+	n.PredecessorIp = preIp
+	n.PredecessorNodeId = preId
+}
+
+func balanceNodeRecsSize(n *Node) {
+	newRecsSize := n.SuccessorNodeId - n.NodeId
+	if n.NodeId > n.SuccessorNodeId {
+		newRecsSize = n.KeySpaceSize - n.NodeId + n.SuccessorNodeId
+	}
+
+	n.Records = make([][]*Record, newRecsSize)
 }

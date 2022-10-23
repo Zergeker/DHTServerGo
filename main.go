@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"strconv"
 	"time"
 
 	"example.com/DHTServer/dht"
@@ -10,17 +9,17 @@ import (
 )
 
 func main() {
-	time.AfterFunc(20*time.Minute, func() { os.Exit(0) })
+	time.AfterFunc(40*time.Minute, func() { os.Exit(0) })
 	viper.SetConfigFile("config.env")
 	viper.ReadInConfig()
 
-	predecessorHost := os.Args[1]
-	successorHost := os.Args[2]
-	nodeId, _ := strconv.Atoi(os.Args[3])
+	initialHost, _ := os.Hostname()
 
-	keySpaceCellSize := viper.GetInt("KEYSPACE_SIZE") / viper.GetInt("NODES_COUNT")
+	keySpaceCellSize := viper.GetInt("KEYSPACE_SIZE")
 
-	n := dht.NewNode(nodeId, keySpaceCellSize, successorHost, predecessorHost, viper.GetInt("NODES_COUNT"))
+	nodeId := dht.HashString(initialHost, keySpaceCellSize)
 
-	dht.StartController(n, viper.GetInt("PORT"), viper.GetInt("NODES_COUNT"))
+	n := dht.NewNode(nodeId, keySpaceCellSize, initialHost, initialHost, viper.GetInt("NODES_COUNT"))
+
+	dht.StartController(n, viper.GetInt("PORT"))
 }
