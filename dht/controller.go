@@ -37,6 +37,11 @@ type NodeInfoResponse struct {
 	Others    []string `json:"others"`
 }
 
+type NodeChangeNeighbor struct {
+	Hostname string
+	HostId   int
+}
+
 func StartController(node *Node, port int) {
 
 	http.HandleFunc("/", storageKeyHandler(node))
@@ -374,8 +379,11 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 		sucId, _ := strconv.Atoi(respSuccessorStruct.Node_hash)
 		changeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
 
-		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "text/plain", bytes.NewBuffer(nodeIdRawBytes))
-		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "text/plain", bytes.NewBuffer(nodeIdRawBytes))
+		changeNeighborStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
+		reqBody, _ := json.Marshal(changeNeighborStruct)
+
+		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "text/plain", bytes.NewBuffer(reqBody))
+		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "text/plain", bytes.NewBuffer(reqBody))
 
 		balanceNodeRecsSize(n)
 	}
@@ -397,11 +405,11 @@ func nodeChangeSuccessorHandler(n *Node) http.HandlerFunc {
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
-		sucId, err := strconv.Atoi(string(body))
-		if err != nil {
-			http.Error(w, "Bad request body", http.StatusBadRequest)
-		}
-		changeNodeSuccessor(n, r.RemoteAddr, sucId)
+
+		var requestBodyStruct NodeChangeNeighbor
+		json.Unmarshal(body, &requestBodyStruct)
+
+		changeNodeSuccessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
 
 		balanceNodeRecsSize(n)
 		w.Write([]byte("Success"))
@@ -414,11 +422,31 @@ func nodeChangePredecessorHandler(n *Node) http.HandlerFunc {
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		}
-		preId, err := strconv.Atoi(string(body))
-		if err != nil {
-			http.Error(w, "Bad request body", http.StatusBadRequest)
-		}
-		changeNodePredecessor(n, r.RemoteAddr, preId)
+
+		var requestBodyStruct NodeChangeNeighbor
+		json.Unmarshal(body, &requestBodyStruct)
+
+		changeNodePredecessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
+
+		balanceNodeRecsSize(n)
 		w.Write([]byte("Success"))
+	}
+}
+
+func nodeLeaveHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		changeSuccessorStruct := NodeChangeNeighbor{n.PredecessorIp, n.NodeId}
+		reqBodySucc, _ := json.Marshal(changeSuccessorStruct)
+
+		changePredecessorStruct := NodeChangeNeighbor{n.SuccessorIp, n.NodeId}
+		reqBodyPred, _ := json.Marshal(changePredecessorStruct)
+
+		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "text/plain", bytes.NewBuffer(reqBodySucc))
+		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "text/plain", bytes.NewBuffer(reqBodyPred))
+
+		changeNodeSuccessor(n, n.NodeAddress, n.NodeId)
+		changeNodePredecessor(n, n.NodeAddress, n.NodeId)
+
+		balanceNodeRecsSize(n)
 	}
 }

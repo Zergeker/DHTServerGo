@@ -1,6 +1,8 @@
 package dht
 
 import (
+	"fmt"
+	"os"
 	"strconv"
 
 	"github.com/spf13/viper"
@@ -8,6 +10,7 @@ import (
 
 type Node struct {
 	NodeId            int
+	NodeAddress       string
 	Records           [][]*Record
 	SuccessorNodeId   int
 	PredecessorNodeId int
@@ -24,11 +27,16 @@ func NewNode(id int, keySpaceCellSize int, sucIp string, preIp string, nodesCoun
 	recs := make([][]*Record, keySpaceCellSize)
 
 	port := viper.GetInt("PORT")
+	address, _ := os.Hostname()
+
+	address = address + ":" + strconv.Itoa(port)
+
+	fmt.Println(address)
 
 	sucFullIp := sucIp + ":" + strconv.Itoa(port)
 	preFullIp := preIp + ":" + strconv.Itoa(port)
 
-	n := Node{id, recs, 0, 0, sucFullIp, preFullIp, port, viper.GetInt("KEYSPACE_SIZE")}
+	n := Node{id, address, recs, 0, 0, sucFullIp, preFullIp, port, viper.GetInt("KEYSPACE_SIZE")}
 	return &n
 }
 
@@ -44,7 +52,9 @@ func changeNodePredecessor(n *Node, preIp string, preId int) {
 
 func balanceNodeRecsSize(n *Node) {
 	newRecsSize := n.SuccessorNodeId - n.NodeId
-	if n.NodeId > n.SuccessorNodeId {
+	if n.SuccessorNodeId == n.NodeId {
+		newRecsSize = n.KeySpaceSize
+	} else if n.NodeId > n.SuccessorNodeId {
 		newRecsSize = n.KeySpaceSize - n.NodeId + n.SuccessorNodeId
 	}
 
