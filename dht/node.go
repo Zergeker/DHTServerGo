@@ -1,7 +1,6 @@
 package dht
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 
@@ -31,12 +30,10 @@ func NewNode(id int, keySpaceCellSize int, sucIp string, preIp string, nodesCoun
 
 	address = address + ":" + strconv.Itoa(port)
 
-	fmt.Println(address)
-
 	sucFullIp := sucIp + ":" + strconv.Itoa(port)
 	preFullIp := preIp + ":" + strconv.Itoa(port)
 
-	n := Node{id, address, recs, 0, 0, sucFullIp, preFullIp, port, viper.GetInt("KEYSPACE_SIZE")}
+	n := Node{id, address, recs, id, id, sucFullIp, preFullIp, port, viper.GetInt("KEYSPACE_SIZE")}
 	return &n
 }
 
