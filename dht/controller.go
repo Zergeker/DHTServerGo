@@ -368,8 +368,8 @@ func nodePlaceSearchHandler(n *Node) http.HandlerFunc {
 				w.WriteHeader(http.StatusInternalServerError)
 				w.Write([]byte("NodeId duplicates"))
 			}
-		} else if searcherId > n.NodeId && searcherId < n.SuccessorNodeId {
-			respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.PredecessorIp}
+		} else if (n.NodeId < n.SuccessorNodeId && searcherId > n.NodeId && searcherId < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && (searcherId > n.NodeId || searcherId < n.SuccessorNodeId)) {
+			respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.NodeAddress}
 			respBodyJson, _ := json.Marshal(respBodyStruct)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
