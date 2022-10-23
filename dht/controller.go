@@ -95,21 +95,31 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 					} else {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
-				} else if inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId {
+				} else if (n.NodeId < n.SuccessorNodeId && inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((inputKeyHashed >= n.NodeId) || (inputKeyHashed < n.SuccessorNodeId && inputKeyHashed >= 0))) {
+					keyIndex := 0
+					if n.NodeId < n.SuccessorNodeId {
+						keyIndex = inputKeyHashed - n.NodeId
+					} else {
+						if inputKeyHashed >= n.NodeId {
+							keyIndex = inputKeyHashed - n.NodeId
+						} else {
+							keyIndex = n.KeySpaceSize - n.NodeId + inputKeyHashed
+						}
+					}
 					foundFlag := false
-					if len(n.Records[inputKeyHashed-n.NodeId]) > 1 {
-						for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
-							if n.Records[inputKeyHashed-n.NodeId][i].OrigKey == OriginalKey {
-								fmt.Fprint(w, n.Records[inputKeyHashed-n.NodeId][i].Value)
+					if len(n.Records[keyIndex]) > 1 {
+						for i := 0; i < len(n.Records[keyIndex]); i++ {
+							if n.Records[keyIndex][i].OrigKey == OriginalKey {
+								fmt.Fprint(w, n.Records[keyIndex][i].Value)
 								foundFlag = true
 							}
 						}
 						if foundFlag == false {
 							http.Error(w, "No such key", http.StatusNotFound)
 						}
-					} else if len(n.Records[inputKeyHashed-n.NodeId]) == 1 {
-						if n.Records[inputKeyHashed-n.NodeId][0].OrigKey == OriginalKey {
-							fmt.Fprintf(w, n.Records[inputKeyHashed-n.NodeId][0].Value)
+					} else if len(n.Records[keyIndex]) == 1 {
+						if n.Records[keyIndex][0].OrigKey == OriginalKey {
+							fmt.Fprintf(w, n.Records[keyIndex][0].Value)
 						} else {
 							http.Error(w, "No such key", http.StatusNotFound)
 						}
@@ -154,14 +164,24 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 							fmt.Fprint(w, "Success!\n")
 						}
 					}
-				} else if inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId {
-					if len(n.Records[inputKeyHashed-n.NodeId]) == 0 {
-						n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+				} else if (n.NodeId < n.SuccessorNodeId && inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((inputKeyHashed >= n.NodeId) || (inputKeyHashed < n.SuccessorNodeId && inputKeyHashed >= 0))) {
+					keyIndex := 0
+					if n.NodeId < n.SuccessorNodeId {
+						keyIndex = inputKeyHashed - n.NodeId
+					} else {
+						if inputKeyHashed >= n.NodeId {
+							keyIndex = inputKeyHashed - n.NodeId
+						} else {
+							keyIndex = n.KeySpaceSize - n.NodeId + inputKeyHashed
+						}
+					}
+					if len(n.Records[keyIndex]) == 0 {
+						n.Records[keyIndex] = append(n.Records[keyIndex], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
 						fmt.Fprint(w, "Success!\n")
 					} else {
 						foundFlag := false
-						for i := 0; i < len(n.Records[inputKeyHashed-n.NodeId]); i++ {
-							if n.Records[inputKeyHashed-n.NodeId][i].OrigKey == OriginalKey {
+						for i := 0; i < len(n.Records[keyIndex]); i++ {
+							if n.Records[keyIndex][i].OrigKey == OriginalKey {
 								foundFlag = true
 							}
 						}
@@ -169,7 +189,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 						if foundFlag {
 							fmt.Fprint(w, "Key is already put\n")
 						} else {
-							n.Records[inputKeyHashed-n.NodeId] = append(n.Records[inputKeyHashed-n.NodeId], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
+							n.Records[keyIndex] = append(n.Records[keyIndex], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
 							fmt.Fprint(w, "Success!\n")
 						}
 					}
@@ -201,21 +221,31 @@ func findKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 			var responseBodyStruct GetInternalKeyRequest
 			json.Unmarshal(respBody, &responseBodyStruct)
 
-			if responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId {
-				if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) > 1 {
+			if (n.NodeId < n.SuccessorNodeId && responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((responseBodyStruct.HashedKey >= n.NodeId) || (responseBodyStruct.HashedKey < n.SuccessorNodeId && responseBodyStruct.HashedKey >= 0))) {
+				keyIndex := 0
+				if n.NodeId < n.SuccessorNodeId {
+					keyIndex = responseBodyStruct.HashedKey - n.NodeId
+				} else {
+					if responseBodyStruct.HashedKey >= n.NodeId {
+						keyIndex = responseBodyStruct.HashedKey - n.NodeId
+					} else {
+						keyIndex = n.KeySpaceSize - n.NodeId + responseBodyStruct.HashedKey
+					}
+				}
+				if len(n.Records[keyIndex]) > 1 {
 					foundFlag := false
-					for i := 0; i < len(n.Records[responseBodyStruct.HashedKey-n.NodeId]); i++ {
-						if n.Records[responseBodyStruct.HashedKey-n.NodeId][i].OrigKey == responseBodyStruct.OriginalKey {
-							fmt.Fprint(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][i].Value)
+					for i := 0; i < len(n.Records[keyIndex]); i++ {
+						if n.Records[keyIndex][i].OrigKey == responseBodyStruct.OriginalKey {
+							fmt.Fprint(w, n.Records[keyIndex][i].Value)
 							foundFlag = true
 						}
 					}
 					if foundFlag == false {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
-				} else if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 1 {
-					if n.Records[responseBodyStruct.HashedKey-n.NodeId][0].OrigKey == responseBodyStruct.OriginalKey {
-						fmt.Fprintf(w, n.Records[responseBodyStruct.HashedKey-n.NodeId][0].Value)
+				} else if len(n.Records[keyIndex]) == 1 {
+					if n.Records[keyIndex][0].OrigKey == responseBodyStruct.OriginalKey {
+						fmt.Fprintf(w, n.Records[keyIndex][0].Value)
 					} else {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
@@ -246,14 +276,24 @@ func putKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 			var responseBodyStruct PutInternalKeyRequest
 			json.Unmarshal(respBody, &responseBodyStruct)
 
-			if responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId {
-				if len(n.Records[responseBodyStruct.HashedKey-n.NodeId]) == 0 {
-					n.Records[responseBodyStruct.HashedKey-n.NodeId] = append(n.Records[responseBodyStruct.HashedKey-n.NodeId], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
+			if (n.NodeId < n.SuccessorNodeId && responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((responseBodyStruct.HashedKey >= n.NodeId) || (responseBodyStruct.HashedKey < n.SuccessorNodeId && responseBodyStruct.HashedKey >= 0))) {
+				keyIndex := 0
+				if n.NodeId < n.SuccessorNodeId {
+					keyIndex = responseBodyStruct.HashedKey - n.NodeId
+				} else {
+					if responseBodyStruct.HashedKey >= n.NodeId {
+						keyIndex = responseBodyStruct.HashedKey - n.NodeId
+					} else {
+						keyIndex = n.KeySpaceSize - n.NodeId + responseBodyStruct.HashedKey
+					}
+				}
+				if len(n.Records[keyIndex]) == 0 {
+					n.Records[keyIndex] = append(n.Records[keyIndex], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
 					fmt.Fprint(w, "Success!\n")
 				} else {
 					foundFlag := false
-					for i := 0; i < len(n.Records[responseBodyStruct.HashedKey-n.NodeId]); i++ {
-						if n.Records[responseBodyStruct.HashedKey-n.NodeId][i].OrigKey == responseBodyStruct.OriginalKey {
+					for i := 0; i < len(n.Records[keyIndex]); i++ {
+						if n.Records[keyIndex][i].OrigKey == responseBodyStruct.OriginalKey {
 							foundFlag = true
 						}
 					}
@@ -261,7 +301,7 @@ func putKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 					if foundFlag {
 						fmt.Fprint(w, "Key is already put\n")
 					} else {
-						n.Records[responseBodyStruct.HashedKey-n.NodeId] = append(n.Records[responseBodyStruct.HashedKey-n.NodeId], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
+						n.Records[keyIndex] = append(n.Records[keyIndex], NewRecord(responseBodyStruct.OriginalKey, responseBodyStruct.Value, n.KeySpaceSize))
 						fmt.Fprint(w, "Success!\n")
 					}
 				}
