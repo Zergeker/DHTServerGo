@@ -13,7 +13,6 @@ import (
 )
 
 var state = 1 //0 = crashed, 1 = active
-var nodesCount = 1
 
 type GetInternalKeyRequest struct {
 	HashedKey   int
@@ -75,7 +74,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 			case "GET":
 				OriginalKey := path.Base(r.URL.Path)
 				inputKeyHashed := HashString(OriginalKey, n.KeySpaceSize)
-				if nodesCount == 1 {
+				if n.NodeId == n.SuccessorNodeId {
 					foundFlag := false
 					if len(n.Records[inputKeyHashed]) > 1 {
 						for i := 0; i < len(n.Records[inputKeyHashed]); i++ {
@@ -136,7 +135,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 					http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 				}
 
-				if nodesCount == 1 {
+				if n.NodeId == n.SuccessorNodeId {
 					if len(n.Records[inputKeyHashed]) == 0 {
 						n.Records[inputKeyHashed] = append(n.Records[inputKeyHashed], NewRecord(OriginalKey, string(body), n.KeySpaceSize))
 						fmt.Fprint(w, "Success!\n")
@@ -318,7 +317,7 @@ func nodePlaceSearchHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		reqBody, _ := ioutil.ReadAll(r.Body)
 		searcherId, _ := strconv.Atoi(string(reqBody))
-		if nodesCount <= 1 {
+		if n.NodeId == n.SuccessorNodeId {
 			if searcherId != n.NodeId {
 				respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.PredecessorIp}
 				respBodyJson, _ := json.Marshal(respBodyStruct)
