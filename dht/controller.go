@@ -356,137 +356,161 @@ func crashSimRecoveryHandler(n *Node) http.HandlerFunc {
 
 func nodePlaceSearchHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		reqBody, _ := ioutil.ReadAll(r.Body)
-		searcherId, _ := strconv.Atoi(string(reqBody))
-		if n.NodeId == n.SuccessorNodeId {
-			if searcherId != n.NodeId {
-				respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.PredecessorIp}
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			reqBody, _ := ioutil.ReadAll(r.Body)
+			searcherId, _ := strconv.Atoi(string(reqBody))
+			if n.NodeId == n.SuccessorNodeId {
+				if searcherId != n.NodeId {
+					respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.PredecessorIp}
+					respBodyJson, _ := json.Marshal(respBodyStruct)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusOK)
+					w.Write(respBodyJson)
+				} else {
+					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte("NodeId duplicates"))
+				}
+			} else if (n.NodeId < n.SuccessorNodeId && searcherId > n.NodeId && searcherId < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && (searcherId > n.NodeId || searcherId < n.SuccessorNodeId)) {
+				respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.NodeAddress}
 				respBodyJson, _ := json.Marshal(respBodyStruct)
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusOK)
 				w.Write(respBodyJson)
-			} else {
+			} else if searcherId == n.NodeId || searcherId == n.SuccessorNodeId {
 				w.WriteHeader(http.StatusInternalServerError)
 				w.Write([]byte("NodeId duplicates"))
+			} else {
+				resp, error := http.Post("http://"+n.SuccessorIp+"/nodePlaceSearch", "application/json", bytes.NewBuffer(reqBody))
+				if error != nil {
+					http.Error(w, "Node was not inserted", http.StatusInternalServerError)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				rBody, _ := ioutil.ReadAll(resp.Body)
+				w.Write(rBody)
 			}
-		} else if (n.NodeId < n.SuccessorNodeId && searcherId > n.NodeId && searcherId < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && (searcherId > n.NodeId || searcherId < n.SuccessorNodeId)) {
-			respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.NodeAddress}
-			respBodyJson, _ := json.Marshal(respBodyStruct)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			w.Write(respBodyJson)
-		} else if searcherId == n.NodeId || searcherId == n.SuccessorNodeId {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("NodeId duplicates"))
-		} else {
-			resp, error := http.Post("http://"+n.SuccessorIp+"/nodePlaceSearch", "application/json", bytes.NewBuffer(reqBody))
-			if error != nil {
-				http.Error(w, "Node was not inserted", http.StatusInternalServerError)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			rBody, _ := ioutil.ReadAll(resp.Body)
-			w.Write(rBody)
 		}
 	}
 }
 
 func nodeJoinHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		nprime := r.URL.Query().Get("nprime")
-		nodeIdRawBytes := []byte(strconv.Itoa(n.NodeId))
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			nprime := r.URL.Query().Get("nprime")
+			nodeIdRawBytes := []byte(strconv.Itoa(n.NodeId))
 
-		resp, error := http.Post("http://"+nprime+"/nodePlaceSearch", "application/json", bytes.NewBuffer(nodeIdRawBytes))
-		if error != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Error occured"))
+			resp, error := http.Post("http://"+nprime+"/nodePlaceSearch", "application/json", bytes.NewBuffer(nodeIdRawBytes))
+			if error != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Error occured"))
+			}
+			respBody, _ := ioutil.ReadAll(resp.Body)
+			var respBodyStruct NodePlaceSearchResponse
+			json.Unmarshal(respBody, &respBodyStruct)
+
+			respPredecessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
+			respPredecessorBody, _ := ioutil.ReadAll(respPredecessor.Body)
+			var respPredecessorStruct NodeInfoResponse
+			json.Unmarshal(respPredecessorBody, &respPredecessorStruct)
+			preId, _ := strconv.Atoi(respPredecessorStruct.Node_hash)
+			changeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
+
+			respSuccessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
+			respSuccessorBody, _ := ioutil.ReadAll(respSuccessor.Body)
+			var respSuccessorStruct NodeInfoResponse
+			json.Unmarshal(respSuccessorBody, &respSuccessorStruct)
+			sucId, _ := strconv.Atoi(respSuccessorStruct.Node_hash)
+			changeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
+
+			changeNeighborStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
+			reqBody, _ := json.Marshal(changeNeighborStruct)
+
+			http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBody))
+			http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBody))
+
+			balanceNodeRecsSize(n)
 		}
-		respBody, _ := ioutil.ReadAll(resp.Body)
-		var respBodyStruct NodePlaceSearchResponse
-		json.Unmarshal(respBody, &respBodyStruct)
-
-		respPredecessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
-		respPredecessorBody, _ := ioutil.ReadAll(respPredecessor.Body)
-		var respPredecessorStruct NodeInfoResponse
-		json.Unmarshal(respPredecessorBody, &respPredecessorStruct)
-		preId, _ := strconv.Atoi(respPredecessorStruct.Node_hash)
-		changeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
-
-		respSuccessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
-		respSuccessorBody, _ := ioutil.ReadAll(respSuccessor.Body)
-		var respSuccessorStruct NodeInfoResponse
-		json.Unmarshal(respSuccessorBody, &respSuccessorStruct)
-		sucId, _ := strconv.Atoi(respSuccessorStruct.Node_hash)
-		changeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
-
-		changeNeighborStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
-		reqBody, _ := json.Marshal(changeNeighborStruct)
-
-		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBody))
-		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBody))
-
-		balanceNodeRecsSize(n)
 	}
 }
 
 func nodeInfoHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		respBodyStruct := NodeInfoResponse{strconv.Itoa(n.NodeId), n.SuccessorIp, []string{n.PredecessorIp}}
-		respBodyJson, _ := json.Marshal(respBodyStruct)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(respBodyJson)
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			respBodyStruct := NodeInfoResponse{strconv.Itoa(n.NodeId), n.SuccessorIp, []string{n.PredecessorIp}}
+			respBodyJson, _ := json.Marshal(respBodyStruct)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write(respBodyJson)
+		}
 	}
 }
 
 func nodeChangeSuccessorHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			body, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+
+			var requestBodyStruct NodeChangeNeighbor
+			json.Unmarshal(body, &requestBodyStruct)
+
+			changeNodeSuccessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
+
+			balanceNodeRecsSize(n)
+			w.Write([]byte("Success"))
 		}
-
-		var requestBodyStruct NodeChangeNeighbor
-		json.Unmarshal(body, &requestBodyStruct)
-
-		changeNodeSuccessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
-
-		balanceNodeRecsSize(n)
-		w.Write([]byte("Success"))
 	}
 }
 
 func nodeChangePredecessorHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			body, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+
+			var requestBodyStruct NodeChangeNeighbor
+			json.Unmarshal(body, &requestBodyStruct)
+
+			changeNodePredecessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
+
+			balanceNodeRecsSize(n)
+			w.Write([]byte("Success"))
 		}
-
-		var requestBodyStruct NodeChangeNeighbor
-		json.Unmarshal(body, &requestBodyStruct)
-
-		changeNodePredecessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
-
-		balanceNodeRecsSize(n)
-		w.Write([]byte("Success"))
 	}
 }
 
 func nodeLeaveHandler(n *Node) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		changeSuccessorStruct := NodeChangeNeighbor{n.PredecessorIp, n.NodeId}
-		reqBodySucc, _ := json.Marshal(changeSuccessorStruct)
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			changeSuccessorStruct := NodeChangeNeighbor{n.PredecessorIp, n.NodeId}
+			reqBodySucc, _ := json.Marshal(changeSuccessorStruct)
 
-		changePredecessorStruct := NodeChangeNeighbor{n.SuccessorIp, n.NodeId}
-		reqBodyPred, _ := json.Marshal(changePredecessorStruct)
+			changePredecessorStruct := NodeChangeNeighbor{n.SuccessorIp, n.NodeId}
+			reqBodyPred, _ := json.Marshal(changePredecessorStruct)
 
-		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBodySucc))
-		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBodyPred))
+			http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBodySucc))
+			http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBodyPred))
 
-		changeNodeSuccessor(n, n.NodeAddress, n.NodeId)
-		changeNodePredecessor(n, n.NodeAddress, n.NodeId)
+			changeNodeSuccessor(n, n.NodeAddress, n.NodeId)
+			changeNodePredecessor(n, n.NodeAddress, n.NodeId)
 
-		balanceNodeRecsSize(n)
+			balanceNodeRecsSize(n)
+		}
 	}
 }
