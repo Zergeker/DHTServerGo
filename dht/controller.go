@@ -55,6 +55,7 @@ func StartController(node *Node, port int) {
 	http.HandleFunc("/changeSuccessor", nodeChangeSuccessorHandler(node))
 	http.HandleFunc("/changePredecessor", nodeChangePredecessorHandler(node))
 	http.HandleFunc("/leave", nodeLeaveHandler(node))
+	http.HandleFunc("/checkPredecessorCrash", checkPredecessorCrashHandler(node))
 
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 
@@ -417,14 +418,14 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			var respPredecessorStruct NodeInfoResponse
 			json.Unmarshal(respPredecessorBody, &respPredecessorStruct)
 			preId, _ := strconv.Atoi(respPredecessorStruct.Node_hash)
-			changeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
+			ChangeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
 
 			respSuccessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
 			respSuccessorBody, _ := ioutil.ReadAll(respSuccessor.Body)
 			var respSuccessorStruct NodeInfoResponse
 			json.Unmarshal(respSuccessorBody, &respSuccessorStruct)
 			sucId, _ := strconv.Atoi(respSuccessorStruct.Node_hash)
-			changeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
+			ChangeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
 
 			changeNeighborStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
 			reqBody, _ := json.Marshal(changeNeighborStruct)
@@ -432,7 +433,7 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBody))
 			http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBody))
 
-			balanceNodeRecsSize(n)
+			BalanceNodeRecsSize(n)
 		}
 	}
 }
@@ -464,9 +465,9 @@ func nodeChangeSuccessorHandler(n *Node) http.HandlerFunc {
 			var requestBodyStruct NodeChangeNeighbor
 			json.Unmarshal(body, &requestBodyStruct)
 
-			changeNodeSuccessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
+			ChangeNodeSuccessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
 
-			balanceNodeRecsSize(n)
+			BalanceNodeRecsSize(n)
 			w.Write([]byte("Success"))
 		}
 	}
@@ -485,9 +486,9 @@ func nodeChangePredecessorHandler(n *Node) http.HandlerFunc {
 			var requestBodyStruct NodeChangeNeighbor
 			json.Unmarshal(body, &requestBodyStruct)
 
-			changeNodePredecessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
+			ChangeNodePredecessor(n, requestBodyStruct.Hostname, requestBodyStruct.HostId)
 
-			balanceNodeRecsSize(n)
+			BalanceNodeRecsSize(n)
 			w.Write([]byte("Success"))
 		}
 	}
@@ -507,10 +508,41 @@ func nodeLeaveHandler(n *Node) http.HandlerFunc {
 			http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBodySucc))
 			http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBodyPred))
 
-			changeNodeSuccessor(n, n.NodeAddress, n.NodeId)
-			changeNodePredecessor(n, n.NodeAddress, n.NodeId)
+			ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
+			ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
 
-			balanceNodeRecsSize(n)
+			BalanceNodeRecsSize(n)
+			w.Write([]byte("Success"))
+		}
+	}
+}
+
+func checkPredecessorCrashHandler(n *Node) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if state == 0 {
+			w.WriteHeader(503)
+		} else {
+			reqBodyJson, _ := ioutil.ReadAll(r.Body)
+			resp, err := http.Get("http://" + n.PredecessorIp + "/node-info")
+			if err != nil || resp.StatusCode == 503 {
+				var reqBodyStruct NodeChangeNeighbor
+				json.Unmarshal(reqBodyJson, &reqBodyStruct)
+				ChangeNodePredecessor(n, reqBodyStruct.Hostname, reqBodyStruct.HostId)
+
+				respBodyStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
+				respBodyJson, _ := json.Marshal(respBodyStruct)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respBodyJson)
+			} else {
+				resp, _ := http.Post("http://"+n.PredecessorIp+"/checkPredecessorCrash", "application/json", bytes.NewBuffer(reqBodyJson))
+				respBodyJson, _ := ioutil.ReadAll(resp.Body)
+
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write(respBodyJson)
+			}
 		}
 	}
 }

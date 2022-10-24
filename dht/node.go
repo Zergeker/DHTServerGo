@@ -37,17 +37,17 @@ func NewNode(id int, keySpaceCellSize int, sucIp string, preIp string, nodesCoun
 	return &n
 }
 
-func changeNodeSuccessor(n *Node, sucIp string, sucId int) {
+func ChangeNodeSuccessor(n *Node, sucIp string, sucId int) {
 	n.SuccessorIp = sucIp
 	n.SuccessorNodeId = sucId
 }
 
-func changeNodePredecessor(n *Node, preIp string, preId int) {
+func ChangeNodePredecessor(n *Node, preIp string, preId int) {
 	n.PredecessorIp = preIp
 	n.PredecessorNodeId = preId
 }
 
-func balanceNodeRecsSize(n *Node) {
+func BalanceNodeRecsSize(n *Node) {
 	newRecsSize := n.SuccessorNodeId - n.NodeId
 	if n.SuccessorNodeId == n.NodeId {
 		newRecsSize = n.KeySpaceSize
