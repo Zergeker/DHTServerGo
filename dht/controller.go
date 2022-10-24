@@ -421,8 +421,8 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 		changeNeighborStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
 		reqBody, _ := json.Marshal(changeNeighborStruct)
 
-		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "text/plain", bytes.NewBuffer(reqBody))
-		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "text/plain", bytes.NewBuffer(reqBody))
+		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBody))
+		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBody))
 
 		balanceNodeRecsSize(n)
 	}
