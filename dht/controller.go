@@ -480,8 +480,8 @@ func nodeLeaveHandler(n *Node) http.HandlerFunc {
 		changePredecessorStruct := NodeChangeNeighbor{n.SuccessorIp, n.NodeId}
 		reqBodyPred, _ := json.Marshal(changePredecessorStruct)
 
-		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "text/plain", bytes.NewBuffer(reqBodySucc))
-		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "text/plain", bytes.NewBuffer(reqBodyPred))
+		http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBodySucc))
+		http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBodyPred))
 
 		changeNodeSuccessor(n, n.NodeAddress, n.NodeId)
 		changeNodePredecessor(n, n.NodeAddress, n.NodeId)
