@@ -54,6 +54,7 @@ func StartController(node *Node, port int) {
 	http.HandleFunc("/node-info", nodeInfoHandler(node))
 	http.HandleFunc("/changeSuccessor", nodeChangeSuccessorHandler(node))
 	http.HandleFunc("/changePredecessor", nodeChangePredecessorHandler(node))
+	http.HandleFunc("/leave", nodeLeaveHandler(node))
 
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
 
