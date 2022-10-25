@@ -350,9 +350,9 @@ func crashSimRecoveryHandler(n *Node) http.HandlerFunc {
 			w.Write([]byte("Node is not crashed"))
 		} else {
 			state = 1
-			respPred, err := http.Get("http//" + n.PredecessorIp + "/node-info")
+			respPred, err := http.Get("http://" + n.PredecessorIp + "/node-info")
 			if err != nil || respPred.StatusCode == 503 {
-				respSucc, err := http.Get("http//" + n.SuccessorIp + "/node-info")
+				respSucc, err := http.Get("http://" + n.SuccessorIp + "/node-info")
 				if err != nil || respSucc.StatusCode == 503 {
 					ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
 					ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
