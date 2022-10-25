@@ -50,7 +50,7 @@ ipArray=("compute-10-0"
 "compute-7-0"
 "compute-7-1")
 
-for ((i=0; i<=$1;i++))
+for ((i=0; i<$1;i++))
 do
-  ssh -f ipArray[i] /home/aiv031/dht/DHTServerGo/main
+  ssh -f "${ipArray[$i]}" /home/aiv031/dht/DHTServerGo/main
 done
