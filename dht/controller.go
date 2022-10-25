@@ -357,6 +357,7 @@ func crashSimRecoveryHandler(n *Node) http.HandlerFunc {
 					ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
 					ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
 					BalanceNodeRecsSize(n)
+					w.Write([]byte("Node recovered, could not return to network"))
 				} else {
 					var respSuccStruct NodeInfoResponse
 					respSuccJson, _ := ioutil.ReadAll(respSucc.Body)
