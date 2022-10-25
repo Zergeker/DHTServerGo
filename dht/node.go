@@ -19,7 +19,7 @@ type Node struct {
 	KeySpaceSize      int
 }
 
-func NewNode(id int, keySpaceCellSize int, sucIp string, preIp string, nodesCount int) *Node {
+func NewNode(id int, keySpaceCellSize int, sucIp string, preIp string) *Node {
 	viper.SetConfigFile("config.env")
 	viper.ReadInConfig()
 

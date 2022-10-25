@@ -23,7 +23,7 @@ func main() {
 
 	nodeId := dht.HashString(initialHost, keySpaceCellSize)
 
-	n := dht.NewNode(nodeId, keySpaceCellSize, initialHost, initialHost, viper.GetInt("NODES_COUNT"))
+	n := dht.NewNode(nodeId, keySpaceCellSize, initialHost, initialHost)
 
 	go dht.StartController(n, viper.GetInt("PORT"))
 
