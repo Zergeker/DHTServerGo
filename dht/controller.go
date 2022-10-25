@@ -540,7 +540,7 @@ func checkPredecessorCrashHandler(n *Node) http.HandlerFunc {
 				respBodyJson, _ := ioutil.ReadAll(resp.Body)
 
 				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
+				w.WriteHeader(resp.StatusCode)
 				w.Write(respBodyJson)
 			}
 		}
