@@ -350,7 +350,51 @@ func crashSimRecoveryHandler(n *Node) http.HandlerFunc {
 			w.Write([]byte("Node is not crashed"))
 		} else {
 			state = 1
-			w.Write([]byte("Node recovered"))
+			respPred, err := http.Get("http//" + n.PredecessorIp + "/node-info")
+			if err != nil || respPred.StatusCode == 503 {
+				respSucc, err := http.Get("http//" + n.SuccessorIp + "/node-info")
+				if err != nil || respSucc.StatusCode == 503 {
+					ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
+					ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
+					BalanceNodeRecsSize(n)
+				} else {
+					var respSuccStruct NodeInfoResponse
+					respSuccJson, _ := ioutil.ReadAll(respSucc.Body)
+					json.Unmarshal(respSuccJson, &respSuccStruct)
+
+					if respSuccStruct.Others[0] == n.NodeAddress {
+						w.Write([]byte("Node recovered, stayed in network during crash"))
+					} else {
+						reqJoin, err := http.Post("http://"+n.NodeAddress+"/join?nprime="+n.SuccessorIp, "text/plain", bytes.NewReader([]byte("")))
+						if err != nil || reqJoin.StatusCode == 503 {
+							ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
+							ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
+							BalanceNodeRecsSize(n)
+							w.Write([]byte("Node recovered, could not return to network"))
+						} else {
+							w.Write([]byte("Node recovered and returned to network"))
+						}
+					}
+				}
+			} else {
+				var respPredStruct NodeInfoResponse
+				respPredJson, _ := ioutil.ReadAll(respPred.Body)
+				json.Unmarshal(respPredJson, &respPredStruct)
+
+				if respPredStruct.Successor == n.NodeAddress {
+					w.Write([]byte("Node recovered, stayed in network during crash"))
+				} else {
+					reqJoin, err := http.Post("http://"+n.NodeAddress+"/join?nprime="+n.PredecessorIp, "text/plain", bytes.NewReader([]byte("")))
+					if err != nil || reqJoin.StatusCode == 503 {
+						ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
+						ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
+						BalanceNodeRecsSize(n)
+						w.Write([]byte("Node recovered, could not return to network"))
+					} else {
+						w.Write([]byte("Node recovered and returned to network"))
+					}
+				}
+			}
 		}
 	}
 }
