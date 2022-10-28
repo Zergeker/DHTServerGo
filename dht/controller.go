@@ -43,18 +43,21 @@ type NodeChangeNeighbor struct {
 
 func StartController(node *Node, port int) {
 
+	//methods for client usage
 	http.HandleFunc("/", storageKeyHandler(node))
 	http.HandleFunc("/neighbors", getNeighborsHandler(node))
-	http.HandleFunc("/findKeyInOtherNode", findKeyInOtherNodeHandler(node))
-	http.HandleFunc("/putKeyInOtherNode", putKeyInOtherNodeHandler(node))
 	http.HandleFunc("/sim-crash", crashSimHandler(node))
 	http.HandleFunc("/sim-recover", crashSimRecoveryHandler(node))
-	http.HandleFunc("/nodePlaceSearch", nodePlaceSearchHandler(node))
 	http.HandleFunc("/join", nodeJoinHandler(node))
+	http.HandleFunc("/leave", nodeLeaveHandler(node))
 	http.HandleFunc("/node-info", nodeInfoHandler(node))
+
+	//methods for internal calls
+	http.HandleFunc("/findKeyInOtherNode", findKeyInOtherNodeHandler(node))
+	http.HandleFunc("/putKeyInOtherNode", putKeyInOtherNodeHandler(node))
+	http.HandleFunc("/nodePlaceSearch", nodePlaceSearchHandler(node))
 	http.HandleFunc("/changeSuccessor", nodeChangeSuccessorHandler(node))
 	http.HandleFunc("/changePredecessor", nodeChangePredecessorHandler(node))
-	http.HandleFunc("/leave", nodeLeaveHandler(node))
 	http.HandleFunc("/checkPredecessorCrash", checkPredecessorCrashHandler(node))
 
 	err := http.ListenAndServe(":"+strconv.Itoa(port), nil)
@@ -97,6 +100,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 					} else {
 						http.Error(w, "No such key", http.StatusNotFound)
 					}
+					//TBD: optimize the condition below (or make it more readable)
 				} else if (n.NodeId < n.SuccessorNodeId && inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((inputKeyHashed >= n.NodeId) || (inputKeyHashed < n.SuccessorNodeId && inputKeyHashed >= 0))) {
 					keyIndex := 0
 					if n.NodeId < n.SuccessorNodeId {
@@ -166,6 +170,7 @@ func storageKeyHandler(n *Node) http.HandlerFunc {
 							fmt.Fprint(w, "Success!\n")
 						}
 					}
+					//TBD: optimize the condition below (or make it more readable)
 				} else if (n.NodeId < n.SuccessorNodeId && inputKeyHashed >= n.NodeId && inputKeyHashed < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((inputKeyHashed >= n.NodeId) || (inputKeyHashed < n.SuccessorNodeId && inputKeyHashed >= 0))) {
 					keyIndex := 0
 					if n.NodeId < n.SuccessorNodeId {
@@ -223,6 +228,7 @@ func findKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 			var responseBodyStruct GetInternalKeyRequest
 			json.Unmarshal(respBody, &responseBodyStruct)
 
+			//TBD: optimize the condition below (or make it more readable)
 			if (n.NodeId < n.SuccessorNodeId && responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((responseBodyStruct.HashedKey >= n.NodeId) || (responseBodyStruct.HashedKey < n.SuccessorNodeId && responseBodyStruct.HashedKey >= 0))) {
 				keyIndex := 0
 				if n.NodeId < n.SuccessorNodeId {
@@ -278,6 +284,7 @@ func putKeyInOtherNodeHandler(n *Node) http.HandlerFunc {
 			var responseBodyStruct PutInternalKeyRequest
 			json.Unmarshal(respBody, &responseBodyStruct)
 
+			//TBD: optimize the condition below (or make it more readable)
 			if (n.NodeId < n.SuccessorNodeId && responseBodyStruct.HashedKey >= n.NodeId && responseBodyStruct.HashedKey < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && ((responseBodyStruct.HashedKey >= n.NodeId) || (responseBodyStruct.HashedKey < n.SuccessorNodeId && responseBodyStruct.HashedKey >= 0))) {
 				keyIndex := 0
 				if n.NodeId < n.SuccessorNodeId {
@@ -351,8 +358,10 @@ func crashSimRecoveryHandler(n *Node) http.HandlerFunc {
 		} else {
 			state = 1
 			respPred, err := http.Get("http://" + n.PredecessorIp + "/node-info")
+			//if predecessor does not respond, check successor
 			if err != nil || respPred.StatusCode == 503 {
 				respSucc, err := http.Get("http://" + n.SuccessorIp + "/node-info")
+				//if successor does not respond, go to a singular node mode
 				if err != nil || respSucc.StatusCode == 503 {
 					ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
 					ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
@@ -418,6 +427,7 @@ func nodePlaceSearchHandler(n *Node) http.HandlerFunc {
 					w.WriteHeader(http.StatusInternalServerError)
 					w.Write([]byte("NodeId duplicates"))
 				}
+				//TBD: optimize the condition below (or make it more readable)
 			} else if (n.NodeId < n.SuccessorNodeId && searcherId > n.NodeId && searcherId < n.SuccessorNodeId) || (n.NodeId > n.SuccessorNodeId && (searcherId > n.NodeId || searcherId < n.SuccessorNodeId)) {
 				respBodyStruct := NodePlaceSearchResponse{n.SuccessorIp, n.NodeAddress}
 				respBodyJson, _ := json.Marshal(respBodyStruct)
@@ -449,6 +459,7 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			nprime := r.URL.Query().Get("nprime")
 			nodeIdRawBytes := []byte(strconv.Itoa(n.NodeId))
 
+			//searching for new node's successor and predecessor
 			resp, error := http.Post("http://"+nprime+"/nodePlaceSearch", "application/json", bytes.NewBuffer(nodeIdRawBytes))
 			if error != nil {
 				w.WriteHeader(http.StatusInternalServerError)
@@ -458,6 +469,7 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			var respBodyStruct NodePlaceSearchResponse
 			json.Unmarshal(respBody, &respBodyStruct)
 
+			//setting new node's predecessor
 			respPredecessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
 			respPredecessorBody, _ := ioutil.ReadAll(respPredecessor.Body)
 			var respPredecessorStruct NodeInfoResponse
@@ -465,6 +477,7 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			preId, _ := strconv.Atoi(respPredecessorStruct.Node_hash)
 			ChangeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
 
+			//setting new node's successor
 			respSuccessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
 			respSuccessorBody, _ := ioutil.ReadAll(respSuccessor.Body)
 			var respSuccessorStruct NodeInfoResponse
@@ -472,9 +485,9 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			sucId, _ := strconv.Atoi(respSuccessorStruct.Node_hash)
 			ChangeNodeSuccessor(n, respBodyStruct.SuccessorIp, sucId)
 
+			//notifying node's successor and predecessor about their new neighbour
 			changeNeighborStruct := NodeChangeNeighbor{n.NodeAddress, n.NodeId}
 			reqBody, _ := json.Marshal(changeNeighborStruct)
-
 			http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBody))
 			http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBody))
 
@@ -550,13 +563,15 @@ func nodeLeaveHandler(n *Node) http.HandlerFunc {
 			changePredecessorStruct := NodeChangeNeighbor{n.SuccessorIp, n.NodeId}
 			reqBodyPred, _ := json.Marshal(changePredecessorStruct)
 
+			//notification for node's neighbours about it's leaving
 			http.Post("http://"+n.SuccessorIp+"/changePredecessor", "application/json", bytes.NewBuffer(reqBodySucc))
 			http.Post("http://"+n.PredecessorIp+"/changeSuccessor", "application/json", bytes.NewBuffer(reqBodyPred))
 
+			//change node's parameters for working as a singular node
 			ChangeNodeSuccessor(n, n.NodeAddress, n.NodeId)
 			ChangeNodePredecessor(n, n.NodeAddress, n.NodeId)
-
 			BalanceNodeRecsSize(n)
+
 			w.Write([]byte("Success"))
 		}
 	}
@@ -568,7 +583,10 @@ func checkPredecessorCrashHandler(n *Node) http.HandlerFunc {
 			w.WriteHeader(503)
 		} else {
 			reqBodyJson, _ := ioutil.ReadAll(r.Body)
+			//check if node's predecessor is alive
 			resp, err := http.Get("http://" + n.PredecessorIp + "/node-info")
+
+			//if it isn't, change the node's predecessor to the initial node which detected crashed node
 			if err != nil || resp.StatusCode == 503 {
 				var reqBodyStruct NodeChangeNeighbor
 				json.Unmarshal(reqBodyJson, &reqBodyStruct)
@@ -581,6 +599,7 @@ func checkPredecessorCrashHandler(n *Node) http.HandlerFunc {
 				w.WriteHeader(http.StatusOK)
 				w.Write(respBodyJson)
 			} else {
+				// if predecessor is alive, send let it check its predecessor
 				resp, _ := http.Post("http://"+n.PredecessorIp+"/checkPredecessorCrash", "application/json", bytes.NewBuffer(reqBodyJson))
 				respBodyJson, _ := ioutil.ReadAll(resp.Body)
 

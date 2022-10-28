@@ -1,29 +1,18 @@
 Use command "go build ./main.go" in the project directory for building a project.
 
 The parameters for launching the application are specified in "config.env" file in a project directory.
-Port, number of nodes and key space size must be specified before launch.
+Port and key space size must be specified before launch.
 
-For executing an application use command "<PATH_TO_PROJECT_DIRECTORY>/main <predecessorIp> <successorIp> <nodeNumber>"
+For executing an application use command "<PATH_TO_PROJECT_DIRECTORY>/main"
 
 This application should be executed on every machine we would like to use in the cluster.
 
-A script for quick launching of the system is TBD.
+start.sh is the script for quick launching of the system on a set of UIT cluster nodes.
+The amount of nodes needed to be set up should be given as a script paremeter.
+For example, to set the system on 20 nodes (first 20 nodes from the script addresses array), use command "<PATH_TO_PROJECT_DIRECTORY>/start.sh 20"
 
-Here is an example of launching the 16-nodes system on compute-10-... with a list of commands:
+join.sh is the script for quick setting up the network.
+The amount of nodes should and a port should be given as a script paremeters.
+For example, to set up the network of 20 nodes on port 58346 (first 20 nodes from the script addresses array), use command "<PATH_TO_PROJECT_DIRECTORY>/join.sh 20 58346"
 
-ssh -f compute-10-0 <PROJECT DIRECTORY>/main 10.1.2.121 10.1.2.197 0
-ssh -f compute-10-1 <PROJECT DIRECTORY>/main 10.1.2.233 10.1.2.184 1
-ssh -f compute-10-2 <PROJECT DIRECTORY>/main 10.1.2.197 10.1.2.183 2
-ssh -f compute-10-3 <PROJECT DIRECTORY>/main 10.1.2.184 10.1.2.182 3
-ssh -f compute-10-4 <PROJECT DIRECTORY>/main 10.1.2.183 10.1.2.181 4
-ssh -f compute-10-5 <PROJECT DIRECTORY>/main 10.1.2.182 10.1.2.180 5
-ssh -f compute-10-6 <PROJECT DIRECTORY>/main 10.1.2.181 10.1.2.179 6
-ssh -f compute-10-7 <PROJECT DIRECTORY>/main 10.1.2.180 10.1.2.178 7
-ssh -f compute-10-8 <PROJECT DIRECTORY>/main10.1.2.179 10.1.2.177 8
-ssh -f compute-10-9 <PROJECT DIRECTORY>/main 10.1.2.178 10.1.2.161 9
-ssh -f compute-10-10 <PROJECT DIRECTORY>/main 10.1.2.177 10.1.2.143 10
-ssh -f compute-10-11 <PROJECT DIRECTORY>/main 10.1.2.161 10.1.2.142 11
-ssh -f compute-10-12 <PROJECT DIRECTORY>/main 10.1.2.143 10.1.2.123 12
-ssh -f compute-10-13 <PROJECT DIRECTORY>/main 10.1.2.142 10.1.2.122 13
-ssh -f compute-10-14 <PROJECT DIRECTORY>/main 10.1.2.123 10.1.2.121 14
-ssh -f compute-10-15 <PROJECT DIRECTORY>/main 10.1.2.122 10.1.2.233 15
+!IMPORTANT! An amount of nodes in start.sh and join.sh scripts should be the same for the correct work.
