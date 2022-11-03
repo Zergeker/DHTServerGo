@@ -478,7 +478,7 @@ func nodeJoinHandler(n *Node) http.HandlerFunc {
 			ChangeNodePredecessor(n, respBodyStruct.PredecessorIp, preId)
 
 			//setting new node's successor
-			respSuccessor, _ := http.Get("http://" + respBodyStruct.PredecessorIp + "/node-info")
+			respSuccessor, _ := http.Get("http://" + respBodyStruct.SuccessorIp + "/node-info")
 			respSuccessorBody, _ := ioutil.ReadAll(respSuccessor.Body)
 			var respSuccessorStruct NodeInfoResponse
 			json.Unmarshal(respSuccessorBody, &respSuccessorStruct)
